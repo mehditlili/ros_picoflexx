@@ -47,7 +47,9 @@ class PicoFlexxCamera
   void setExposureTimeLimits(int _minimum_exposure_time, int _maximum_exposure_time);
   void setAutoExposureTime(bool _auto_exposure_time);
   void setFrameRate(int _frame_rate);
-  void setOperationMode(royale::OperationMode _operation_mode);
+  //void setOperationMode(royale::OperationMode _operation_mode);
+  void setUseCase(royale::String &useCase);
+
 
  private:
   royale::CameraManager& manager_;
@@ -58,11 +60,11 @@ class PicoFlexxCamera
   int exposure_time_;
   bool auto_exposure_time_;
   std::string frame_id_;
-  std::string operation_mode_;
+  int use_case_;
 
   ros::NodeHandle nh_;
 
-  void updateOperationMode();
+  //void updateUseCase();
   void updateExposureSettings();
 
 

@@ -17,7 +17,7 @@
  * created on Sep 30, 2015 5:00:11 AM
  */
 
-#include <royale/CameraManager.hpp>
+#include <royale.hpp>
 #include <iostream>
 #include <ros_picoflexx/ros_picoflexx.h>
 #include <memory>
@@ -39,12 +39,12 @@ void PicoFlexxCamera::Initialize()
   //read ros parameters
   nh_ = ros::NodeHandle("~/" + camera_name_);
 
-  nh_.param < std::string > ("camera_id", camera_id_, "0005-1203-0034-1816");
+  nh_.param < std::string > ("camera_id", camera_id_, "0005-1206-0034-0815");
   nh_.param<int>("exposure_time", exposure_time_, 2000);
   nh_.param<bool>("auto_exposure_time", auto_exposure_time_, true);
-  nh_.param < std::string > ("operation_mode", operation_mode_, "MODE_9_5FPS_2000");
+  nh_.param <int> ("use_case", use_case_, 0);
 
-  std::vector < std::string > camlist = manager_.getConnectedCameraList();
+  royale::Vector < royale::String > camlist = manager_.getConnectedCameraList();
   bool camera_initialized = false;
   for (int i = 0; i < camlist.size(); i++) {
     if (camlist[i] == camera_id_) {
@@ -71,29 +71,29 @@ void PicoFlexxCamera::Initialize()
   std::cout << "        Camera information" << std::endl;
   std::cout << "====================================" << std::endl;
   std::cout << "Id:              " << camera_device_->getId() << std::endl;
-  std::cout << "Type:            " << (int) camera_device_->getCameraType() << std::endl;
+  std::cout << "Name:            " << camera_device_->getCameraName() << std::endl;
   std::cout << "Width:           " << camera_device_->getMaxSensorWidth() << std::endl;
   std::cout << "Height:          " << camera_device_->getMaxSensorHeight() << std::endl;
-  std::cout << "Operation modes: " << camera_device_->getOperationModes().size() << std::endl;
+  std::cout << "Use Cases: " << camera_device_->getUseCases().size() << std::endl;
   std::cout << "Focal Length  fx: " << lensParams.focalLength.first << std::endl;
   std::cout << "Focal Length  fy: " << lensParams.focalLength.second << std::endl;
   std::cout << "Principal Pt. px: " << lensParams.principalPoint.first << std::endl;
   std::cout << "Principal Pt. py: " << lensParams.principalPoint.second << std::endl;
-  std::cout << "Dist. Coeff k1:   " << std::get<0>(lensParams.distortionRadial) << std::endl;
-  std::cout << "Dist. Coeff k2:   " << std::get<1>(lensParams.distortionRadial) << std::endl;
-  std::cout << "Dist. Coeff k3:   " << std::get<2>(lensParams.distortionRadial) << std::endl;
+  std::cout << "Dist. Coeff k1:   " << lensParams.distortionRadial[0] << std::endl;
+  std::cout << "Dist. Coeff k2:   " << lensParams.distortionRadial[1] << std::endl;
+  std::cout << "Dist. Coeff k3:   " << lensParams.distortionRadial[2] << std::endl;
   std::cout << "Dist. Coeff p1:   " << lensParams.distortionTangential.first << std::endl;
   std::cout << "Dist. Coeff p2:   " << lensParams.distortionTangential.second << std::endl;
 
-  for (auto mode : camera_device_->getOperationModes()) {
-    std::cout << "    " << royale::getOperationModeName(mode) << std::endl;
-  }
+//  for (auto mode : camera_device_->getUseCases()) {
+//    std::cout << "    " << royale::getUseCaseName(mode) << std::endl;
+//  }
 
   // set an operation mode
-  updateOperationMode();
+  //updateOperationMode();
 
   //set exposure settings
-  //updateExposureSettings();
+  updateExposureSettings();
 
   config_service_ = nh_.advertiseService("config", &PicoFlexxCamera::configCameraCallback, this);
 
@@ -118,20 +118,20 @@ bool PicoFlexxCamera::startAcquisition()
   camera_device_->stopRecording();
 }
 
-void PicoFlexxCamera::updateOperationMode()
-{
-  royale::CameraStatus operation_mode_set = royale::CameraStatus::OPERATION_MODE_NOT_SUPPORTED;
-  for (auto mode : camera_device_->getOperationModes()) {
-    if (royale::getOperationModeName(mode) == operation_mode_) {
-      ROS_INFO_STREAM(" Setting Operaton Mode to:   " << royale::getOperationModeName(mode));
-      operation_mode_set = camera_device_->setOperationMode(mode);
-    }
-  }
+//void PicoFlexxCamera::updateOperationMode()
+//{
+//  royale::CameraStatus operation_mode_set = royale::CameraStatus::USECASE_NOT_SUPPORTED;
+//  for (auto mode : camera_device_->getUseCases()) {
+//    if (royale::getOperationModeName(mode) == use_case_) {
+//      ROS_INFO_STREAM(" Setting Operaton Mode to:   " << royale::getOperationModeName(mode));
+//      operation_mode_set = camera_device_->setUseCase(mode);
+//    }
+//  }
 
-  if (operation_mode_set != royale::CameraStatus::SUCCESS) {
-    ROS_WARN("Operation mode not supported. Setting default operation mode.");
-  }
-}
+//  if (operation_mode_set != royale::CameraStatus::SUCCESS) {
+//    ROS_WARN("Operation mode not supported. Setting default operation mode.");
+//  }
+//}
 
 void PicoFlexxCamera::updateExposureSettings()
 {
@@ -157,8 +157,8 @@ void PicoFlexxCamera::updateExposureSettings()
 bool PicoFlexxCamera::configCameraCallback(ros_picoflexx::PicoFlexxConfig::Request &req,
                                            ros_picoflexx::PicoFlexxConfig::Response &res)
 {
-  operation_mode_ = req.operation_mode;
-  updateOperationMode();
+  use_case_ = req.use_case;
+  //updateOperationMode();
   return true;
 }
 
@@ -172,7 +172,7 @@ int main(int argc, char** argv)
   std::vector < std::shared_ptr < PicoFlexxCamera >> picoflexx_cameras_vector;
 
   //get cameras list
-  std::vector < std::string > camlist;
+  royale::Vector <royale::String> camlist;
   int attempts = 5;
 
   ROS_INFO("Detecting cameras...");
