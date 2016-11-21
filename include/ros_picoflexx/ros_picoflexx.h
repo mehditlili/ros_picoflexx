@@ -22,6 +22,7 @@
 #include <royale.hpp>
 #include <ros/ros.h>
 #include <sensor_msgs/PointCloud2.h>
+#include <sensor_msgs/CameraInfo.h>
 #include <thread>
 #include <pcl/point_types.h>
 #include <pcl/io/pcd_io.h>
@@ -49,7 +50,7 @@ class PicoFlexxCamera
   void setFrameRate(int _frame_rate);
   //void setOperationMode(royale::OperationMode _operation_mode);
   void setUseCase(royale::String &useCase);
-
+  royale::LensParameters lensParams_;
 
  private:
   royale::CameraManager& manager_;
@@ -61,13 +62,12 @@ class PicoFlexxCamera
   bool auto_exposure_time_;
   std::string frame_id_;
   int use_case_;
-
   ros::NodeHandle nh_;
 
   //void updateUseCase();
   void updateExposureSettings();
 
-
+public:
   class DepthDataListener : public royale::IDepthDataListener
   {
    public:
@@ -78,10 +78,13 @@ class PicoFlexxCamera
       nh.param<std::string>("topic_name", topic_name_,  "pcl");
       nh.param<std::string>("frame_id", frame_id_, "cam_link");
       nh.param<std::string>("topic_depth", topic_depth_,  "depth/image_raw");
+      nh.param<std::string>("topic_camera_info", topic_camera_info_, "depth/camera_info");
 
       pcl_publisher_ = nh.advertise<sensor_msgs::PointCloud2>(topic_name_, 1);
       image_transport::ImageTransport image_transport(nh);
       depth_publisher_ = image_transport.advertise(topic_depth_, 1);
+      camera_info_publisher_ = nh.advertise<sensor_msgs::CameraInfo>(topic_camera_info_, 1);
+
       seq_ = 0;
       cloud_.reset(new pcl::PointCloud<pcl::PointXYZ>);
     }
@@ -92,14 +95,16 @@ class PicoFlexxCamera
       cloud_->height = data->height;
       cloud_->width = data->width;
       cloud_->points.resize(cloud_->height * cloud_->width);
-      cv::Mat depth_mat(data->height,data->width,CV_16UC1);
+      cv::Mat depth_mat(data->height,data->width,CV_32FC1);
 
       for (int i = 0; i < data->points.size(); i++) {
         pcl::PointXYZ& pt = cloud_->points[i];
         pt.x = data->points[i].x;
         pt.y = data->points[i].y;
         pt.z = data->points[i].z;
-        depth_mat.at<unsigned short>(i/data->width, i%data->width) = (unsigned short)5000*data->points[i].z;
+        //depth_mat.at<unsigned short>(i/data->width, i%data->width) = (unsigned short)5000*data->points[i].z;
+        depth_mat.at<float>(i/data->width, i%data->width) = data->points[i].z;
+
       }
       pcl::toROSMsg(*cloud_, pcl2_msg_);
 
@@ -110,14 +115,17 @@ class PicoFlexxCamera
           - (int) (data->timeStamp.count() / 1000) * 1000) * 1000000;
 
       pcl_publisher_.publish(pcl2_msg_);
-      
+      sensor_msgs::CameraInfoPtr camera_info_msg_;
+      camera_info_msg_ = sensor_msgs::CameraInfoPtr(new sensor_msgs::CameraInfo);
+      *camera_info_msg_ = camera_info_;
+      camera_info_publisher_.publish(camera_info_msg_);
       depth_img_.header = pcl2_msg_.header;
       depth_img_.width = depth_mat.cols;
       depth_img_.height = depth_mat.rows;
       
-      depth_img_.encoding = sensor_msgs::image_encodings::TYPE_16UC1;
+      depth_img_.encoding = sensor_msgs::image_encodings::TYPE_32FC1;
       depth_img_.is_bigendian = 0;
-      int step = sizeof(unsigned short) * depth_img_.width;
+      int step = (uint32_t)(sizeof(float) * depth_img_.width);
       int size = step * depth_img_.height;
       depth_img_.step = step;
       depth_img_.data.resize(size);
@@ -127,6 +135,7 @@ class PicoFlexxCamera
 
       seq_++;
     }
+   sensor_msgs::CameraInfo camera_info_;
    private:
     sensor_msgs::PointCloud2 pcl2_msg_;
     sensor_msgs::Image depth_img_;
@@ -134,10 +143,13 @@ class PicoFlexxCamera
     int seq_;
     std::string topic_name_;
     std::string topic_depth_;
+    std::string topic_camera_info_;
     std::string frame_id_;
     ros::Publisher pcl_publisher_;
+    ros::Publisher camera_info_publisher_;
     image_transport::Publisher depth_publisher_;
   };
+  bool createCameraInfo(PicoFlexxCamera::DepthDataListener &listener, const royale::LensParameters &params);
   std::thread thread_;
   ros::ServiceServer config_service_;
   bool configCameraCallback(ros_picoflexx::PicoFlexxConfig::Request  &req,
