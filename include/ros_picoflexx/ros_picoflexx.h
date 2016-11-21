@@ -106,6 +106,7 @@ public:
         depth_mat.at<float>(i/data->width, i%data->width) = data->points[i].z;
 
       }
+
       pcl::toROSMsg(*cloud_, pcl2_msg_);
 
       pcl2_msg_.header.seq = seq_;
@@ -130,7 +131,7 @@ public:
       depth_img_.step = step;
       depth_img_.data.resize(size);
       memcpy(&depth_img_.data[0], depth_mat.data, size);
-      
+
       depth_publisher_.publish(depth_img_);
 
       seq_++;
