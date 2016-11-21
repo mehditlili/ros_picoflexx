@@ -21,6 +21,23 @@
 #include <iostream>
 #include <ros_picoflexx/ros_picoflexx.h>
 #include <memory>
+#define NO_COLOR        "\033[0m"
+#define FG_BLACK        "\033[30m"
+#define FG_RED          "\033[31m"
+#define FG_GREEN        "\033[32m"
+#define FG_YELLOW       "\033[33m"
+#define FG_BLUE         "\033[34m"
+#define FG_MAGENTA      "\033[35m"
+#define FG_CYAN         "\033[36m"
+#define OUT_FUNCTION(NAME) ([](const std::string &name)\
+{ \
+  size_t end = name.rfind('(');\
+  if(end == std::string::npos) end = name.size();\
+  size_t begin = 1 + name.rfind(' ', end);\
+  return name.substr(begin, end - begin);\
+}(NAME))
+#define OUT_AUX(FUNC_COLOR, MSG_COLOR, STREAM, MSG) STREAM(FUNC_COLOR "[" << OUT_FUNCTION(__PRETTY_FUNCTION__) << "] " MSG_COLOR << MSG << NO_COLOR)
+#define OUT_INFO(msg) OUT_AUX(FG_GREEN, NO_COLOR, ROS_INFO_STREAM, msg)
 
 PicoFlexxCamera::PicoFlexxCamera(royale::CameraManager& _manager, std::string _camera_name)
     : manager_(_manager),
@@ -32,6 +49,65 @@ PicoFlexxCamera::PicoFlexxCamera(royale::CameraManager& _manager, std::string _c
 PicoFlexxCamera::~PicoFlexxCamera()
 {
 
+}
+
+bool PicoFlexxCamera::createCameraInfo(PicoFlexxCamera::DepthDataListener &listener, const royale::LensParameters &params)
+{
+  if(params.distortionRadial.size() != 3)
+  {
+    ROS_ERROR("distortion model unknown!");
+    return false;
+  }
+
+  listener.camera_info_.height = camera_device_->getMaxSensorHeight();
+  listener.camera_info_.width = camera_device_->getMaxSensorWidth();
+
+  listener.camera_info_.K[0] = params.focalLength.first;
+  listener.camera_info_.K[1] = 0;
+  listener.camera_info_.K[2] = params.principalPoint.first;
+  listener.camera_info_.K[3] = 0;
+  listener.camera_info_.K[4] = params.focalLength.second;
+  listener.camera_info_.K[5] = params.principalPoint.second;
+  listener.camera_info_.K[6] = 0;
+  listener.camera_info_.K[7] = 0;
+  listener.camera_info_.K[8] = 1;
+
+  listener.camera_info_.R[0] = 1;
+  listener.camera_info_.R[1] = 0;
+  listener.camera_info_.R[2] = 0;
+  listener.camera_info_.R[3] = 0;
+  listener.camera_info_.R[4] = 1;
+  listener.camera_info_.R[5] = 0;
+  listener.camera_info_.R[6] = 0;
+  listener.camera_info_.R[7] = 0;
+  listener.camera_info_.R[8] = 1;
+
+  listener.camera_info_.P[0] = params.focalLength.first;
+  listener.camera_info_.P[1] = 0;
+  listener.camera_info_.P[2] = params.principalPoint.first;
+  listener.camera_info_.P[3] = 0;
+  listener.camera_info_.P[4] = 0;
+  listener.camera_info_.P[5] = params.focalLength.second;
+  listener.camera_info_.P[6] = params.principalPoint.second;
+  listener.camera_info_.P[7] = 0;
+  listener.camera_info_.P[8] = 0;
+  listener.camera_info_.P[9] = 0;
+  listener.camera_info_.P[10] = 1;
+  listener.camera_info_.P[11] = 0;
+
+  listener.camera_info_.distortion_model = "plumb_bob";
+  listener.camera_info_.D.resize(5);
+  listener.camera_info_.D[0] = params.distortionRadial[0];
+  listener.camera_info_.D[1] = params.distortionRadial[1];
+  listener.camera_info_.D[2] = params.distortionTangential.first;
+  listener.camera_info_.D[3] = params.distortionTangential.second;
+  listener.camera_info_.D[4] = params.distortionRadial[2];
+  const royale::Vector<royale::Pair<royale::String,royale::String>> &info = camera_device_->getCameraInfo();
+  for(size_t i = 0; i < info.size(); ++i)
+  {
+    OUT_INFO("  " << info[i].first << ": " FG_CYAN << info[i].second << NO_COLOR);
+  }
+  return true;
 }
 
 void PicoFlexxCamera::Initialize()
@@ -63,8 +139,7 @@ void PicoFlexxCamera::Initialize()
     ROS_ERROR("Cannot initialize the camera device");
     return;
   }
-  royale::LensParameters lensParams;
-  camera_device_->getLensParameters (lensParams);
+  camera_device_->getLensParameters (lensParams_);
 
   // display some information about the connected camera
   std::cout << "====================================" << std::endl;
@@ -75,15 +150,15 @@ void PicoFlexxCamera::Initialize()
   std::cout << "Width:           " << camera_device_->getMaxSensorWidth() << std::endl;
   std::cout << "Height:          " << camera_device_->getMaxSensorHeight() << std::endl;
   std::cout << "Use Cases: " << camera_device_->getUseCases().size() << std::endl;
-  std::cout << "Focal Length  fx: " << lensParams.focalLength.first << std::endl;
-  std::cout << "Focal Length  fy: " << lensParams.focalLength.second << std::endl;
-  std::cout << "Principal Pt. px: " << lensParams.principalPoint.first << std::endl;
-  std::cout << "Principal Pt. py: " << lensParams.principalPoint.second << std::endl;
-  std::cout << "Dist. Coeff k1:   " << lensParams.distortionRadial[0] << std::endl;
-  std::cout << "Dist. Coeff k2:   " << lensParams.distortionRadial[1] << std::endl;
-  std::cout << "Dist. Coeff k3:   " << lensParams.distortionRadial[2] << std::endl;
-  std::cout << "Dist. Coeff p1:   " << lensParams.distortionTangential.first << std::endl;
-  std::cout << "Dist. Coeff p2:   " << lensParams.distortionTangential.second << std::endl;
+  std::cout << "Focal Length  fx: " << lensParams_.focalLength.first << std::endl;
+  std::cout << "Focal Length  fy: " << lensParams_.focalLength.second << std::endl;
+  std::cout << "Principal Pt. px: " << lensParams_.principalPoint.first << std::endl;
+  std::cout << "Principal Pt. py: " << lensParams_.principalPoint.second << std::endl;
+  std::cout << "Dist. Coeff k1:   " << lensParams_.distortionRadial[0] << std::endl;
+  std::cout << "Dist. Coeff k2:   " << lensParams_.distortionRadial[1] << std::endl;
+  std::cout << "Dist. Coeff k3:   " << lensParams_.distortionRadial[2] << std::endl;
+  std::cout << "Dist. Coeff p1:   " << lensParams_.distortionTangential.first << std::endl;
+  std::cout << "Dist. Coeff p2:   " << lensParams_.distortionTangential.second << std::endl;
 
 //  for (auto mode : camera_device_->getUseCases()) {
 //    std::cout << "    " << royale::getUseCaseName(mode) << std::endl;
@@ -103,6 +178,10 @@ void PicoFlexxCamera::Initialize()
 bool PicoFlexxCamera::startAcquisition()
 {
   DepthDataListener listener(camera_name_);
+  if (!createCameraInfo(listener, lensParams_)){
+      ROS_ERROR("Could not create camera info");
+      return false;
+  }
   camera_device_->registerDataListener(&listener);
 
   // start capture mode

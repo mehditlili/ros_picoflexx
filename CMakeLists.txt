@@ -65,7 +65,7 @@ set(CMAKE_INSTALL_RPATH ${royale_LIB_DIR})
 
 add_definitions(${PCL_DEFINITIONS})
 
-add_executable(ros_picoflexx_node src/ros_picoflexx_node.cc)
+add_executable(ros_picoflexx_node src/ros_picoflexx_node.cpp)
 get_target_property(ros_picoflexx_node_location ros_picoflexx_node LOCATION)
 get_filename_component(ros_picoflexx_node_DIR ${ros_picoflexx_node_location} PATH)
 
