@@ -18,7 +18,6 @@
  */
 #ifndef INCLUDE_ROS_PICOFLEXX_ROS_PICOFLEXX_H_
 #define INCLUDE_ROS_PICOFLEXX_ROS_PICOFLEXX_H_
-
 #include <royale.hpp>
 #include <ros/ros.h>
 #include <sensor_msgs/PointCloud2.h>
@@ -31,12 +30,12 @@
 #include <image_transport/image_transport.h>
 #include <sensor_msgs/image_encodings.h>
 #include <opencv2/opencv.hpp>
-
+#include <cv_bridge/cv_bridge.h>
 
 class PicoFlexxCamera
 {
  public:
-  PicoFlexxCamera(royale::CameraManager& _manager, std::string _camera_name);
+  PicoFlexxCamera(royale::CameraManager& _manager);
   ~PicoFlexxCamera();
 
   void Initialize();
@@ -75,15 +74,16 @@ public:
     {
       ros::NodeHandle nh(_camera_name);
 
-      nh.param<std::string>("topic_name", topic_name_,  "pcl");
-      nh.param<std::string>("frame_id", frame_id_, "cam_link");
-      nh.param<std::string>("topic_depth", topic_depth_,  "depth/image_raw");
-      nh.param<std::string>("topic_camera_info", topic_camera_info_, "depth/camera_info");
-
-      pcl_publisher_ = nh.advertise<sensor_msgs::PointCloud2>(topic_name_, 1);
+      nh.param<std::string>("point_cloud_topic", point_cloud_topic_,  "points");
+      nh.param<std::string>("frame_id", frame_id_, _camera_name+"_optical_frame");
+      nh.param<std::string>("depth_image_topic", depth_image_topic_,  "image_depth");
+      nh.param<std::string>("grey_image_topic", grey_image_topic_,  "image_mono8");
+      nh.param<std::string>("camera_info_topic", camera_info_topic_, "camera_info");
+      point_cloud_pub_ = nh.advertise<sensor_msgs::PointCloud2>(point_cloud_topic_, 1);
       image_transport::ImageTransport image_transport(nh);
-      depth_publisher_ = image_transport.advertise(topic_depth_, 1);
-      camera_info_publisher_ = nh.advertise<sensor_msgs::CameraInfo>(topic_camera_info_, 1);
+      depth_image_pub_ = image_transport.advertise(depth_image_topic_, 1);
+      grey_image_pub_ = image_transport.advertise(grey_image_topic_, 1);
+      camera_info_pub_ = nh.advertise<sensor_msgs::CameraInfo>(camera_info_topic_, 1);
 
       seq_ = 0;
       cloud_.reset(new pcl::PointCloud<pcl::PointXYZ>);
@@ -96,15 +96,24 @@ public:
       cloud_->width = data->width;
       cloud_->points.resize(cloud_->height * cloud_->width);
       cv::Mat depth_mat(data->height,data->width,CV_32FC1);
+      cv::Mat grey_mat(data->height,data->width,CV_16UC1);
 
       for (int i = 0; i < data->points.size(); i++) {
         pcl::PointXYZ& pt = cloud_->points[i];
-        pt.x = data->points[i].x;
-        pt.y = data->points[i].y;
-        pt.z = data->points[i].z;
-        //depth_mat.at<unsigned short>(i/data->width, i%data->width) = (unsigned short)5000*data->points[i].z;
-        depth_mat.at<float>(i/data->width, i%data->width) = data->points[i].z;
-
+        grey_mat.at<uint16_t>(i/data->width, i%data->width) = data->points[i].grayValue;
+        if (data->points[i].noise < 0.05 * data->points[i].z){
+            pt.x = data->points[i].x;
+            pt.y = data->points[i].y;
+            pt.z = data->points[i].z;
+            //depth_mat.at<unsigned short>(i/data->width, i%data->width) = (unsigned short)5000*data->points[i].z;
+            depth_mat.at<float>(i/data->width, i%data->width) = data->points[i].z;
+        }
+        else{
+            pt.x = bad_point_;
+            pt.y = bad_point_;
+            pt.z = bad_point_;
+            depth_mat.at<float>(i/data->width, i%data->width) = bad_point_;
+        }
       }
 
       pcl::toROSMsg(*cloud_, pcl2_msg_);
@@ -115,15 +124,14 @@ public:
       pcl2_msg_.header.stamp.nsec = (data->timeStamp.count()
           - (int) (data->timeStamp.count() / 1000) * 1000) * 1000000;
 
-      pcl_publisher_.publish(pcl2_msg_);
+      point_cloud_pub_.publish(pcl2_msg_);
       sensor_msgs::CameraInfoPtr camera_info_msg_;
       camera_info_msg_ = sensor_msgs::CameraInfoPtr(new sensor_msgs::CameraInfo);
       *camera_info_msg_ = camera_info_;
-      camera_info_publisher_.publish(camera_info_msg_);
+      camera_info_pub_.publish(camera_info_msg_);
       depth_img_.header = pcl2_msg_.header;
       depth_img_.width = depth_mat.cols;
       depth_img_.height = depth_mat.rows;
-      
       depth_img_.encoding = sensor_msgs::image_encodings::TYPE_32FC1;
       depth_img_.is_bigendian = 0;
       int step = (uint32_t)(sizeof(float) * depth_img_.width);
@@ -132,23 +140,32 @@ public:
       depth_img_.data.resize(size);
       memcpy(&depth_img_.data[0], depth_mat.data, size);
 
-      depth_publisher_.publish(depth_img_);
+      img_bridge_ = cv_bridge::CvImage(depth_img_.header, sensor_msgs::image_encodings::MONO16, grey_mat);
+      img_bridge_.toImageMsg(grey_img_); // from cv_bridge to sensor_msgs::Image
 
+      depth_image_pub_.publish(depth_img_);
+      grey_image_pub_.publish(grey_img_);
       seq_++;
     }
    sensor_msgs::CameraInfo camera_info_;
    private:
     sensor_msgs::PointCloud2 pcl2_msg_;
     sensor_msgs::Image depth_img_;
+    sensor_msgs::Image grey_img_;
+    cv_bridge::CvImage img_bridge_;
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_;
     int seq_;
-    std::string topic_name_;
-    std::string topic_depth_;
-    std::string topic_camera_info_;
+    std::string point_cloud_topic_;
+    std::string depth_image_topic_;
+    std::string grey_image_topic_;
+    std::string camera_info_topic_;
     std::string frame_id_;
-    ros::Publisher pcl_publisher_;
-    ros::Publisher camera_info_publisher_;
-    image_transport::Publisher depth_publisher_;
+    ros::Publisher point_cloud_pub_;
+    ros::Publisher camera_info_pub_;
+    const float bad_point_ = std::numeric_limits<float>::quiet_NaN();
+    image_transport::Publisher depth_image_pub_;
+    image_transport::Publisher grey_image_pub_;
+
   };
   bool createCameraInfo(PicoFlexxCamera::DepthDataListener &listener, const royale::LensParameters &params);
   std::thread thread_;

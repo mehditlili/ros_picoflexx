@@ -21,6 +21,7 @@ find_package(catkin REQUIRED COMPONENTS
   std_msgs
   message_generation
   image_transport
+  cv_bridge
 )
 ## System dependencies are found with CMake's conventions
 find_package(royale REQUIRED)

@@ -22,9 +22,8 @@
 #include <ros_picoflexx/ros_picoflexx.h>
 #include <memory>
 
-PicoFlexxCamera::PicoFlexxCamera(royale::CameraManager& _manager, std::string _camera_name)
-    : manager_(_manager),
-      camera_name_(_camera_name)
+PicoFlexxCamera::PicoFlexxCamera(royale::CameraManager& _manager)
+    : manager_(_manager)
 {
 
 }
@@ -91,9 +90,9 @@ bool PicoFlexxCamera::createCameraInfo(PicoFlexxCamera::DepthDataListener &liste
 void PicoFlexxCamera::Initialize()
 {
   //read ros parameters
-  nh_ = ros::NodeHandle("~/" + camera_name_);
-
+  nh_ = ros::NodeHandle("~");
   nh_.param < std::string > ("camera_id", camera_id_, "");
+  nh_.param < std::string > ("camera_name", camera_name_, "pico_flexx");
   nh_.param<int>("exposure_time", exposure_time_, 2000);
   nh_.param<bool>("auto_exposure_time", auto_exposure_time_, true);
   nh_.param <int> ("use_case", use_case_, 0);
@@ -237,7 +236,6 @@ int main(int argc, char** argv)
   ros::NodeHandle nh("");
   royale::CameraManager manager;
 
-  std::vector < std::shared_ptr < PicoFlexxCamera >> picoflexx_cameras_vector;
 
   //get cameras list
   royale::Vector <royale::String> camlist;
@@ -260,13 +258,9 @@ int main(int argc, char** argv)
 
   for (int i = 0; i < camlist.size(); i++) {
     std::cout << "Detected a camera with ID: " << camlist[i] << std::endl;
-    std::shared_ptr<PicoFlexxCamera> tmp;
-    picoflexx_cameras_vector.push_back(tmp);
-    picoflexx_cameras_vector.back().reset(new PicoFlexxCamera(manager, "cam" + std::to_string(i)));
-
-    picoflexx_cameras_vector.back()->Initialize();
   }
-
+  PicoFlexxCamera pico_flexx(manager);
+  pico_flexx.Initialize();
   ros::AsyncSpinner spinner(4);  // Use 4 threads
   spinner.start();
   ros::waitForShutdown();
